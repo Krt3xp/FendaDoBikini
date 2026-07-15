@@ -31,7 +31,7 @@ jobs:
           git clone "http://oauth2:${{ secrets.GITHUB_TOKEN }}@192.168.50.210:3000/${{ github.repository }}.git" repo
           cd repo
           git checkout "${{ github.ref_name }}"
-          git log --oneline -1
+          git --no-pager log --oneline -1
 
       - name: Push da branch para o fork no GitHub
         run: |
