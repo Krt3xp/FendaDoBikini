@@ -35,6 +35,8 @@ class User(Base):
     id = Column(UUID(as_uuid=False), primary_key=True, default=generate_uuid)
     name = Column(String(120), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
+    # Hash bcrypt da senha; NULL = morador ainda não definiu senha (primeiro acesso pendente)
+    password_hash = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
