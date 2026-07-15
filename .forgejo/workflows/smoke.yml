@@ -1,0 +1,7 @@
+name: smoke
+on: push
+jobs:
+  hello:
+    runs-on: native
+    steps:
+      - run: echo "runner alive on friends org"
