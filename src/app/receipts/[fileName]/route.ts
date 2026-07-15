@@ -1,5 +1,16 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { getSessionUser } from "@/lib/auth";
+
+/** Comprovantes são dados sensíveis: exige sessão válida (verificada no backend). */
+async function unauthorizedResponse(body: boolean) {
+  return new Response(body ? "Não autenticado." : null, {
+    status: 401,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+    },
+  });
+}
 
 const receiptDirectory = path.join(
   process.cwd(),
@@ -46,6 +57,10 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ fileName: string }> },
 ) {
+  if (!(await getSessionUser())) {
+    return unauthorizedResponse(true);
+  }
+
   const { fileName } = await params;
 
   if (!isValidReceiptFileName(fileName)) {
@@ -78,6 +93,10 @@ export async function HEAD(
   _request: Request,
   { params }: { params: Promise<{ fileName: string }> },
 ) {
+  if (!(await getSessionUser())) {
+    return unauthorizedResponse(false);
+  }
+
   const { fileName } = await params;
 
   if (!isValidReceiptFileName(fileName)) {
