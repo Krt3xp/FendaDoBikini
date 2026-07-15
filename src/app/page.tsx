@@ -1,6 +1,9 @@
 import { DashboardData } from "@/types/dashboard";
 import { formatMoney, formatPersonName, fieldClass, getTodayBRT } from "@/lib/utils";
 import { getReceiptFileName, getReceiptPreviewUrl, getReceiptPreviewKind } from "@/lib/receipt";
+import { getSessionToken, getSessionUser, type SessionUser } from "@/lib/auth";
+import { logout } from "./login/actions";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://backend:8000";
@@ -110,7 +113,14 @@ function getDueStatus(daysUntil: number) {
  * com o restante do código que foi originalmente Prisma-based.
  */
 async function getDashboardData(): Promise<DashboardData> {
-  const response = await fetch(`${BACKEND_URL}/api/dashboard`, { cache: 'no-store' });
+  const token = await getSessionToken();
+  const response = await fetch(`${BACKEND_URL}/api/dashboard`, {
+    cache: 'no-store',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (response.status === 401) {
+    redirect("/login");
+  }
   if (!response.ok) {
     throw new Error(`Erro ao buscar dados: ${response.statusText}`);
   }
@@ -729,11 +739,13 @@ function Sidebar({
   groupCount,
   settlementCount,
   userCount,
+  sessionUser,
 }: {
   activeView: ActiveView;
   groupCount: number;
   settlementCount: number;
   userCount: number;
+  sessionUser: SessionUser | null;
 }) {
   const mainItems = [
     { label: "Visão geral", view: "dashboard" },
@@ -832,6 +844,21 @@ function Sidebar({
           <div className="rounded-2xl border border-cyan-300/15 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100">
             Ambiente local conectado ao PostgreSQL
           </div>
+          {sessionUser ? (
+            <div className="flex items-center justify-between gap-2 rounded-2xl border border-cyan-300/15 bg-slate-950/60 px-3 py-2">
+              <span className="truncate text-xs text-slate-300" title={sessionUser.email}>
+                {formatPersonName(sessionUser.name)}
+              </span>
+              <form action={logout}>
+                <button
+                  className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-200 transition hover:bg-rose-500/20"
+                  type="submit"
+                >
+                  Sair
+                </button>
+              </form>
+            </div>
+          ) : null}
         </div>
       </div>
     </aside>
@@ -1755,6 +1782,10 @@ export default async function Home({
 }) {
   const params = searchParams ? await searchParams : undefined;
   const activeView = normalizeView(params?.view);
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    redirect("/login");
+  }
   const { users, categories, groups } = await getDashboardData();
   const today = getTodayBRT();
   const { overview, settlements } = getSettlementSummary(groups);
@@ -1769,6 +1800,7 @@ export default async function Home({
         groupCount={groups.length}
         settlementCount={settlements.length}
         userCount={users.length}
+        sessionUser={sessionUser}
       />
 
       <main className="flex min-w-0 flex-col gap-6">

@@ -9,7 +9,6 @@ Gerencia endpoints para:
     - Contas fixas, créditos de favores, despensa compartilhada
 """
 
-# TODO: Implementar autenticação e autorização por morador
 # TODO: Configurar Alembic para migrações versionadas (substituir ALTER TABLE manual)
 # TODO: Implementar paginação no endpoint do dashboard
 # TODO: Adicionar rate limiting nos endpoints
@@ -19,7 +18,7 @@ from fastapi import FastAPI, Depends, Form, UploadFile, File, HTTPException, Req
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, asc
+from sqlalchemy import desc, asc, func
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -48,11 +47,20 @@ from sqlalchemy import text
 try:
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE pantry_purchases ADD COLUMN IF NOT EXISTS expense_id UUID REFERENCES expenses(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
         conn.commit()
 except Exception as e:
-    print("Could not alter table pantry_purchases:", e)
+    print("Could not alter tables:", e)
+
+from auth import (
+    auth_middleware, get_current_user, hash_password, verify_password,
+    create_session_token, MIN_PASSWORD_LENGTH
+)
 
 app = FastAPI()
+
+# Proteção global: todas as rotas /api/* exigem sessão (exceto /api/auth/*)
+app.middleware("http")(auth_middleware)
 
 # CORS configuration — restringido apenas às origens confiáveis do frontend
 app.add_middleware(
@@ -89,6 +97,83 @@ def _validate_upload(file_content: bytes, filename: str) -> None:
     file_ext = os.path.splitext(filename)[1].lower()
     if file_ext not in ALLOWED_UPLOAD_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Tipo de arquivo não permitido")
+
+
+# ---- AUTH ----
+
+def _serialize_session_user(user: User) -> dict:
+    """Serializa o usuário autenticado para respostas de auth."""
+    return {"id": str(user.id), "name": user.name, "email": user.email}
+
+
+@app.post("/api/auth/login")
+def login(email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    """
+    Autentica um morador por e-mail e senha.
+
+    Returns:
+        dict com 'token' (JWT de sessão, 7 dias) e 'user'
+
+    Raises:
+        HTTPException(401): credenciais inválidas
+        HTTPException(409): morador existe mas ainda não definiu senha (primeiro acesso)
+    """
+    user = db.query(User).filter(func.lower(User.email) == email.strip().lower()).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
+    if user.password_hash is None:
+        raise HTTPException(status_code=409, detail="Primeiro acesso: defina sua senha antes de entrar")
+    if not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
+    return {"token": create_session_token(user), "user": _serialize_session_user(user)}
+
+
+@app.post("/api/auth/setup-password")
+def setup_password(email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    """
+    Primeiro acesso: define a senha de um morador que ainda não tem uma.
+
+    Só funciona enquanto password_hash for NULL — depois disso a troca de
+    senha exige a senha atual (ver /api/auth/change-password).
+
+    Raises:
+        HTTPException(400): senha curta demais
+        HTTPException(404): e-mail não cadastrado
+        HTTPException(409): morador já tem senha definida
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail=f"A senha precisa ter pelo menos {MIN_PASSWORD_LENGTH} caracteres")
+    user = db.query(User).filter(func.lower(User.email) == email.strip().lower()).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="E-mail não cadastrado. Peça a um morador para te cadastrar.")
+    if user.password_hash is not None:
+        raise HTTPException(status_code=409, detail="Este morador já tem senha definida")
+    user.password_hash = hash_password(password)
+    db.commit()
+    return {"token": create_session_token(user), "user": _serialize_session_user(user)}
+
+
+@app.post("/api/auth/change-password")
+def change_password(
+    currentPassword: str = Form(...),
+    newPassword: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Troca a senha do morador autenticado (exige a senha atual)."""
+    if len(newPassword) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail=f"A senha precisa ter pelo menos {MIN_PASSWORD_LENGTH} caracteres")
+    if current_user.password_hash is None or not verify_password(currentPassword, current_user.password_hash):
+        raise HTTPException(status_code=401, detail="Senha atual incorreta")
+    current_user.password_hash = hash_password(newPassword)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def get_me(current_user: User = Depends(get_current_user)):
+    """Retorna o morador da sessão atual (também valida o token)."""
+    return _serialize_session_user(current_user)
 
 
 # ---- SCHEMAS FOR DASHBOARD ----

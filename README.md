@@ -75,6 +75,16 @@ cp .env.example .env
 | `POSTGRES_PASSWORD` | `fendadobikini` | Senha do PostgreSQL |
 | `POSTGRES_DB` | `fendadobikini` | Nome do banco de dados |
 | `BACKEND_URL` | `http://backend:8000` | URL interna do backend |
+| `AUTH_SECRET` | — | Segredo que assina os tokens de sessão (obrigatório em produção; `openssl rand -hex 32`) |
+
+## 🔐 Autenticação
+
+Todas as rotas (frontend e API) exigem login por morador:
+
+- **Login**: e-mail + senha em `/login`. A sessão é um JWT (7 dias) guardado em cookie `httpOnly`.
+- **Primeiro acesso**: morador cadastrado sem senha define a própria senha na tela de login ("Primeiro acesso? Definir minha senha"). Só funciona enquanto a senha não existe.
+- **Bootstrap**: numa instalação vazia (zero moradores), o primeiro `POST /api/users` é permitido sem sessão — crie o primeiro morador, defina a senha via primeiro acesso e o sistema tranca.
+- **API**: endpoints `/api/*` exigem header `Authorization: Bearer <token>`; o token vem de `POST /api/auth/login`. Troca de senha em `POST /api/auth/change-password`.
 
 ## 📁 Estrutura do Projeto
 
@@ -127,7 +137,7 @@ FendaDoBikini/
 
 ## 🔮 Melhorias Futuras
 
-- [ ] **Autenticação** — Login por morador com sessões seguras
+- [x] **Autenticação** — Login por morador com sessões seguras (JWT + cookie httpOnly, primeiro acesso auto-serviço)
 - [ ] **Alembic Migrations** — Migrações versionadas do banco de dados
 - [ ] **Paginação** — Carregamento sob demanda no dashboard
 - [ ] **Notificações** — Toasts de sucesso/erro e push notifications

@@ -1,13 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { getSessionToken } from "@/lib/auth";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://backend:8000";
 
 // TODO: Adicionar tratamento de erros com mensagens user-friendly
 /**
- * Proxy genérico para encaminhar FormData do frontend ao backend FastAPI.
- * Após sucesso, revalida a rota raiz para refletir mudanças imediatamente.
+ * Proxy genérico para encaminhar FormData do frontend ao backend FastAPI,
+ * anexando o token de sessão do morador logado. Sessão inválida/expirada
+ * redireciona para /login. Após sucesso, revalida a rota raiz.
  * @param endpoint - Caminho relativo da API (sem /api/ prefix)
  * @param formData - Dados do formulário a enviar
  * @param method - Método HTTP (padrão: POST)
@@ -16,19 +19,24 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://backend:8000";
  */
 async function proxyToBackend(endpoint: string, formData: FormData, method: string = "POST") {
   const url = `${BACKEND_URL}/api/${endpoint}`;
-  
-  // Clean up empty fields if necessary, or just send directly
+  const token = await getSessionToken();
+
   const response = await fetch(url, {
     method,
     body: formData,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
-  
+
+  if (response.status === 401) {
+    redirect("/login");
+  }
+
   if (!response.ok) {
     const text = await response.text();
     console.error("Erro do backend:", text);
     throw new Error(`Erro na operação: ${response.status} ${response.statusText}`);
   }
-  
+
   revalidatePath("/");
   return await response.json();
 }
