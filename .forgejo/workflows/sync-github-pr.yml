@@ -1,0 +1,73 @@
+# Espelha PRs deste forge para o GitHub upstream:
+#   PR aberto/atualizado aqui → branch força-push para o fork
+#   m-da-costa/FendaDoBikini → PR criado (se não existir) contra
+#   Krt3xp/FendaDoBikini:main.
+#
+# Segredos do repositório (Settings → Actions → Secrets):
+#   GH_PAT — GitHub PAT (m-da-costa) com escopo repo
+#
+# Nota: clone COMPLETO de propósito — os templates com --depth 1 só
+# baixam a default branch e o checkout do SHA do PR falha silenciosamente.
+name: sync-github-pr
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  mirror-to-github:
+    runs-on: native
+    steps:
+      - name: Clone completo + checkout do head do PR
+        run: |
+          rm -rf repo
+          git clone "http://oauth2:${{ secrets.GITHUB_TOKEN }}@192.168.50.210:3000/${{ github.repository }}.git" repo
+          cd repo
+          git checkout "${{ github.head_ref }}"
+          git log --oneline -1
+
+      - name: Push da branch para o fork no GitHub
+        run: |
+          cd repo
+          git push --force \
+            "https://m-da-costa:${{ secrets.GH_PAT }}@github.com/m-da-costa/FendaDoBikini.git" \
+            "HEAD:refs/heads/${{ github.head_ref }}"
+
+      - name: Garantir PR remoto (Krt3xp/FendaDoBikini ← m-da-costa:branch)
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          TITLE=$(printf '%s' "${{ github.event.pull_request.title }}" | head -c 200)
+          EXISTING=$(curl -s \
+            -H "Authorization: token ${{ secrets.GH_PAT }}" \
+            "https://api.github.com/repos/Krt3xp/FendaDoBikini/pulls?head=m-da-costa:${BRANCH}&state=open" \
+            | python3 -c "import json,sys; prs=json.load(sys.stdin); print(prs[0]['html_url'] if prs else '')")
+          if [ -n "$EXISTING" ]; then
+            echo "PR remoto já existe: $EXISTING (branch sincronizada pelo push)"
+            exit 0
+          fi
+          python3 - <<PYEOF
+          import json, os, urllib.request
+          body = {
+              "title": os.environ.get("TITLE") or "sync: ${BRANCH}",
+              "head": "m-da-costa:${BRANCH}",
+              "base": "main",
+              "body": "PR espelhado automaticamente do forge interno (friends/FendaDoBikini#${{ github.event.pull_request.number }}).",
+          }
+          req = urllib.request.Request(
+              "https://api.github.com/repos/Krt3xp/FendaDoBikini/pulls",
+              data=json.dumps(body).encode(),
+              headers={"Authorization": "token ${{ secrets.GH_PAT }}",
+                       "Accept": "application/vnd.github+json"},
+              method="POST",
+          )
+          try:
+              print("PR remoto criado:", json.load(urllib.request.urlopen(req))["html_url"])
+          except urllib.error.HTTPError as e:
+              msg = e.read().decode()
+              if "already exists" in msg:
+                  print("PR remoto já existia (corrida) — ok")
+              else:
+                  raise SystemExit(f"Falha ao criar PR remoto: {e.code} {msg[:300]}")
+          PYEOF
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
