@@ -1,0 +1,36 @@
+# Dependency directories
+node_modules/
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.pytest_cache/
+backend/.venv/
+
+# Next.js build and cache
+.next/
+out/
+tsconfig.tsbuildinfo
+
+# Environmental variables & secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# System & IDE files
+.DS_Store
+.vscode/
+.idea/
+
+# Local uploads/storage
+backend/public/uploads/
+public/uploads/
+temp_clone/
