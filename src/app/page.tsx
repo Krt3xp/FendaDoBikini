@@ -1129,232 +1129,6 @@ function FixedBillAlerts({ alerts }: { alerts: FixedBillAlert[] }) {
   );
 }
 
-function ReverseLeaderboardCard({
-  leaderboard,
-}: {
-  leaderboard: ReverseLeaderboard;
-}) {
-  return (
-    <section className="grid gap-5 xl:grid-cols-2">
-      <div className="neon-glow rounded-[2rem] border border-orange-300/15 bg-slate-950/75 p-6 text-white backdrop-blur-xl">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-orange-300">
-          Inadimplente do Mês
-        </p>
-        <h2 className="mt-2 text-2xl font-bold">Leaderboard reverso</h2>
-
-        <div className="mt-5 grid gap-3">
-          {leaderboard.debtors.length === 0 ? (
-            <p className="rounded-3xl border border-dashed border-orange-300/20 bg-orange-400/10 p-5 text-sm text-orange-100">
-              Ninguém no vermelho. Milagre contábil da casa.
-            </p>
-          ) : (
-            leaderboard.debtors.map((entry, index) => (
-              <div
-                className="rounded-3xl border border-orange-300/15 bg-orange-400/10 p-4"
-                key={entry.key}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-black text-white">
-                      #{index + 1} {formatPersonName(entry.name)}
-                    </p>
-                    <p className="mt-1 text-sm text-orange-100/80">
-                      {entry.title} · {entry.daysHolding} dia
-                      {entry.daysHolding === 1 ? "" : "s"} no modo suspense
-                    </p>
-                  </div>
-                  <strong className="rounded-full bg-orange-300 px-3 py-1 text-sm text-slate-950">
-                    {formatMoney(entry.amount, entry.currency)}
-                  </strong>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="neon-glow rounded-[2rem] border border-emerald-300/15 bg-slate-950/75 p-6 text-white backdrop-blur-xl">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">
-          Pagou Bonito
-        </p>
-        <h2 className="mt-2 text-2xl font-bold">Os velocistas do Pix</h2>
-
-        <div className="mt-5 grid gap-3">
-          {leaderboard.punctual.length === 0 ? (
-            <p className="rounded-3xl border border-dashed border-emerald-300/20 bg-emerald-400/10 p-5 text-sm text-emerald-100">
-              Ainda não tem herói financeiro nessa rodada.
-            </p>
-          ) : (
-            leaderboard.punctual.map((entry, index) => (
-              <div
-                className="rounded-3xl border border-emerald-300/15 bg-emerald-400/10 p-4"
-                key={entry.key}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-black text-white">
-                      #{index + 1} {formatPersonName(entry.name)}
-                    </p>
-                    <p className="mt-1 text-sm text-emerald-100/80">
-                      {entry.title}
-                    </p>
-                  </div>
-                  <strong className="rounded-full bg-emerald-300 px-3 py-1 text-sm text-slate-950">
-                    {formatMoney(entry.amount, entry.currency)}
-                  </strong>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FavorExchange({ groups }: { groups: DashboardGroup[] }) {
-  const openCredits = groups.flatMap((group) =>
-    (group.favorCredits || [])
-      .filter((favor: any) => favor.status === "OPEN")
-      .map((favor: any) => ({
-        ...favor,
-        groupName: group.name,
-      })),
-  );
-
-  return (
-    <section className="grid gap-5 2xl:grid-cols-[0.95fr_1.05fr]">
-      <div className={panelClass}>
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-fuchsia-300">
-          Troca de Favores
-        </p>
-        <h2 className="mt-2 text-2xl font-bold text-white">
-          Créditos simbólicos da casa
-        </h2>
-        <p className="mt-2 text-sm text-slate-400">
-          Lavou louça, buscou encomenda, salvou o rolê? Vira crédito.
-        </p>
-
-        <div className="mt-5 grid gap-4">
-          {groups.length === 0 ? (
-            <p className="rounded-3xl border border-dashed border-cyan-300/20 bg-slate-900/60 p-5 text-sm text-slate-400">
-              Crie um grupo antes de lançar favores.
-            </p>
-          ) : (
-            groups.map((group) => (
-              <form
-                action={createFavorCredit}
-                className="grid gap-4 rounded-3xl border border-fuchsia-300/10 bg-slate-900/45 p-5"
-                key={group.id}
-              >
-                <input name="groupId" type="hidden" value={group.id} />
-                <h3 className="font-semibold text-white">{group.name}</h3>
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <label className="grid gap-2 text-sm font-medium text-cyan-100/90">
-                    Quem ganhou crédito
-                    <select className={fieldClass} name="creditorId" required>
-                      <option value="">Morador</option>
-                      {group.members.map((member) => (
-                        <option key={member.id} value={member.userId}>
-                          {formatPersonName(member.user.name)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium text-cyan-100/90">
-                    Quem ficou devendo
-                    <select className={fieldClass} name="debtorId" required>
-                      <option value="">Morador</option>
-                      {group.members.map((member) => (
-                        <option key={member.id} value={member.userId}>
-                          {formatPersonName(member.user.name)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_160px]">
-                  <TextInput
-                    label="Favor"
-                    name="description"
-                    placeholder="Ex.: lavou a louça"
-                  />
-                  <TextInput
-                    label="Créditos"
-                    name="credits"
-                    type="number"
-                    min="1"
-                    defaultValue="1"
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <button className="min-h-12 min-w-40 whitespace-nowrap rounded-2xl bg-gradient-to-r from-fuchsia-500 via-cyan-400 to-teal-300 px-6 py-3 text-sm font-black text-slate-950 shadow-[0_0_24px_rgba(34,211,238,0.25)] transition hover:-translate-y-0.5 hover:shadow-[0_0_34px_rgba(236,72,153,0.35)]">
-                    Lançar favor
-                  </button>
-                </div>
-              </form>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="neon-glow rounded-[2rem] border border-fuchsia-300/15 bg-slate-950/75 p-6 text-white backdrop-blur-xl">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-fuchsia-300">
-              Créditos em aberto
-            </p>
-            <h2 className="mt-2 text-2xl font-bold">Quem está no lucro moral</h2>
-          </div>
-          <span className="rounded-full border border-fuchsia-300/20 bg-fuchsia-300/10 px-3 py-1 text-xs font-semibold text-fuchsia-100">
-            {pluralize(openCredits.length, "favor", "favores")}
-          </span>
-        </div>
-
-        <div className="mt-5 grid gap-3">
-          {openCredits.length === 0 ? (
-            <p className="rounded-3xl border border-white/10 bg-white/10 p-5 text-sm text-slate-300">
-              Nenhum favor pendente. Paz doméstica detectada.
-            </p>
-          ) : (
-            openCredits.map((favor) => (
-              <form
-                action={settleFavorCredit}
-                className="rounded-3xl border border-fuchsia-300/15 bg-fuchsia-300/10 p-4"
-                key={favor.id}
-              >
-                <input name="favorCreditId" type="hidden" value={favor.id} />
-                <input name="groupId" type="hidden" value={favor.groupId} />
-                <input name="actorId" type="hidden" value={favor.debtorId} />
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-bold text-white">
-                      {formatPersonName(favor.creditor.name)}
-                      <span className="mx-2 text-fuchsia-300">→</span>
-                      {formatPersonName(favor.debtor.name)}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-300">
-                      {favor.description} · {favor.groupName}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-fuchsia-300 px-3 py-1 text-sm font-black text-slate-950">
-                      +{favor.credits} crédito{favor.credits === 1 ? "" : "s"}
-                    </span>
-                    <button className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-sm font-semibold text-cyan-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/15">
-                      Bater
-                    </button>
-                  </div>
-                </div>
-              </form>
-            ))
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /**
  * Painel de contas fixas de um grupo.
  * Permite cadastrar novas contas, marcar como pago/a pagar e excluir.
@@ -1998,7 +1772,6 @@ export default async function Home({
   const today = getTodayBRT();
   const { overview, settlements } = getSettlementSummary(groups);
   const fixedBillAlerts = getFixedBillAlerts(groups, today);
-  const reverseLeaderboard = getReverseLeaderboard(groups, today);
   const showGroupWorkspace = activeView === "grupos" || activeView === "despesas";
 
   return (
@@ -2054,8 +1827,6 @@ export default async function Home({
 
             <SettlementOverview balances={overview} settlements={settlements} />
 
-            <ReverseLeaderboardCard leaderboard={reverseLeaderboard} />
-
             <section className="rounded-[1.5rem] border border-cyan-300/15 bg-slate-950/60 p-4 text-white backdrop-blur-xl">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -2074,8 +1845,6 @@ export default async function Home({
                 </Link>
               </div>
             </section>
-
-            <FavorExchange groups={groups} />
           </>
         )}
 
