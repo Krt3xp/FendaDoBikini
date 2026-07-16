@@ -25,6 +25,7 @@ import {
 import { ConfirmSubmitButton } from "./confirm-submit-button";
 import { ExpenseForm } from "./expense-form";
 import { ExpenseHistory } from "./expense-history";
+import { SettlementList, SerializedSettlement } from "./settlement-list";
 
 export const dynamic = "force-dynamic";
 
@@ -1748,12 +1749,24 @@ function LiquidacoesView({
     groupId?: string;
   };
 }) {
-  // Coleta todas as liquidações de todos os grupos
-  const allSettlements = groups
+  // Coleta todas as liquidações de todos os grupos e serializa para o Client Component
+  const serializedSettlements: SerializedSettlement[] = groups
     .flatMap((g) =>
       g.settlements.map((s) => ({
-        ...s,
+        id: s.id,
+        groupId: s.groupId,
+        payerId: s.payerId,
+        receiverId: s.receiverId,
+        amount: typeof s.amount.toNumber === "function" ? s.amount.toNumber() : Number(s.amount),
+        currency: s.currency,
+        settledAt: s.settledAt instanceof Date ? s.settledAt.toISOString() : String(s.settledAt),
+        createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : String(s.createdAt),
+        receiptUrl: s.receiptUrl,
+        receiptName: s.receiptName,
+        receiptMimeType: s.receiptMimeType,
         groupName: g.name,
+        payer: { id: s.payer.id, name: s.payer.name },
+        receiver: { id: s.receiver.id, name: s.receiver.name },
       })),
     )
     .sort(
@@ -1948,86 +1961,12 @@ function LiquidacoesView({
             </h2>
           </div>
           <span className="rounded-full bg-cyan-300/15 px-3 py-1 text-xs font-bold text-cyan-200">
-            {allSettlements.length}{" "}
-            {allSettlements.length === 1 ? "liquidação" : "liquidações"}
+            {serializedSettlements.length}{" "}
+            {serializedSettlements.length === 1 ? "liquidação" : "liquidações"}
           </span>
         </div>
 
-        <div className="mt-5 grid gap-3">
-          {allSettlements.length === 0 ? (
-            <p className="rounded-3xl border border-white/10 bg-white/10 p-5 text-sm text-slate-300">
-              Nenhuma liquidação registrada ainda.
-            </p>
-          ) : (
-            allSettlements.map((st) => {
-              const previewUrl = getReceiptPreviewUrl(st.receiptUrl);
-              const previewKind = getReceiptPreviewKind(st.receiptMimeType);
-
-              return (
-                <div
-                  className="rounded-3xl border border-cyan-300/10 bg-slate-900/60 p-4"
-                  key={st.id}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-base font-bold text-white">
-                        {formatPersonName(st.payer.name)}
-                        <span className="mx-2 text-emerald-300">→</span>
-                        {formatPersonName(st.receiver.name)}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
-                        {st.groupName} ·{" "}
-                        {timestampFormatter.format(new Date(st.settledAt))}
-                      </p>
-                    </div>
-                    <strong className="rounded-full bg-emerald-300 px-3 py-1 text-sm text-slate-950">
-                      {formatMoney(
-                        st.amount.toNumber(),
-                        st.currency,
-                      )}
-                    </strong>
-                  </div>
-
-                  {previewUrl && (
-                    <div className="mt-3 flex items-center gap-2 rounded-2xl border border-cyan-300/10 bg-slate-950/60 px-4 py-2">
-                      <svg
-                        className="size-4 shrink-0 text-cyan-300"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                        />
-                      </svg>
-                      <a
-                        href={previewUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-cyan-200 underline transition hover:text-cyan-100"
-                      >
-                        {st.receiptName || "Comprovante"}
-                      </a>
-                      {previewKind === "image" && (
-                        <span className="rounded bg-cyan-300/10 px-2 py-0.5 text-[10px] font-bold uppercase text-cyan-300">
-                          Imagem
-                        </span>
-                      )}
-                      {previewKind === "pdf" && (
-                        <span className="rounded bg-fuchsia-300/10 px-2 py-0.5 text-[10px] font-bold uppercase text-fuchsia-300">
-                          PDF
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
+        <SettlementList settlements={serializedSettlements} />
       </div>
     </section>
   );
