@@ -2,6 +2,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  isAdmin: boolean;
+  hasPassword: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

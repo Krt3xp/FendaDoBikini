@@ -16,6 +16,8 @@ import {
   createPantryPurchase,
   createSettlement,
   createUser,
+  setUserPassword,
+  setFirstAccess,
   deleteFixedBill,
   deleteGroup,
   deletePantryItem,
@@ -112,6 +114,19 @@ function getDueStatus(daysUntil: number) {
  * a interface Prisma Decimal ({ toNumber }) para manter compatibilidade
  * com o restante do código que foi originalmente Prisma-based.
  */
+/** Configuração pública de auth (estado do toggle de primeiro acesso). */
+async function getFirstAccessEnabled(): Promise<boolean> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/auth/config`, { cache: "no-store" });
+    if (!response.ok) {
+      return true;
+    }
+    return (await response.json()).firstAccessEnabled !== false;
+  } catch {
+    return true;
+  }
+}
+
 async function getDashboardData(): Promise<DashboardData> {
   const token = await getSessionToken();
   const response = await fetch(`${BACKEND_URL}/api/dashboard`, {
@@ -1787,6 +1802,7 @@ export default async function Home({
     redirect("/login");
   }
   const { users, categories, groups } = await getDashboardData();
+  const firstAccessEnabled = await getFirstAccessEnabled();
   const today = getTodayBRT();
   const { overview, settlements } = getSettlementSummary(groups);
   const fixedBillAlerts = getFixedBillAlerts(groups, today);
@@ -1874,6 +1890,38 @@ export default async function Home({
 
         {activeView === "usuarios" && (
           <>
+            {sessionUser.isAdmin ? (
+              <section className={panelClass}>
+                <h2 className="text-xl font-semibold text-white">Acesso e segurança</h2>
+                <p className={`mt-1 text-sm ${mutedTextClass}`}>
+                  Configurações de login do Split Lab (visível apenas para admins).
+                </p>
+                <form
+                  action={setFirstAccess}
+                  className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-cyan-300/10 bg-slate-900/45 p-5"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-100">
+                      Primeiro acesso (auto-cadastro de senha)
+                    </p>
+                    <p className={`mt-1 text-xs ${mutedTextClass}`}>
+                      {firstAccessEnabled
+                        ? "Ativado — moradores sem senha podem defini-la na tela de login."
+                        : "Desativado — apenas admins definem senhas (abaixo, em cada morador)."}
+                    </p>
+                  </div>
+                  <input
+                    name="enabled"
+                    type="hidden"
+                    value={firstAccessEnabled ? "false" : "true"}
+                  />
+                  <SubmitButton>
+                    {firstAccessEnabled ? "Desativar" : "Ativar"}
+                  </SubmitButton>
+                </form>
+              </section>
+            ) : null}
+
             <form action={createUser} className={panelClass}>
               <h2 className="text-xl font-semibold text-white">Novo morador</h2>
               <p className={`mt-1 text-sm ${mutedTextClass}`}>
@@ -1899,7 +1947,19 @@ export default async function Home({
                     className="rounded-3xl border border-cyan-300/10 bg-slate-900/55 p-4"
                     key={user.id}
                   >
-                    <form action={updateUser} className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      {user.isAdmin ? (
+                        <span className="rounded-full border border-fuchsia-400/30 bg-fuchsia-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-fuchsia-200">
+                          Admin
+                        </span>
+                      ) : null}
+                      {!user.hasPassword ? (
+                        <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-200">
+                          Sem senha
+                        </span>
+                      ) : null}
+                    </div>
+                    <form action={updateUser} className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto_auto] md:items-end">
                       <input name="userId" type="hidden" value={user.id} />
                       <TextInput
                         label="Nome"
@@ -1912,6 +1972,21 @@ export default async function Home({
                         type="email"
                         defaultValue={user.email}
                       />
+                      {sessionUser.isAdmin ? (
+                        <label className="flex flex-col gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">
+                            Papel
+                          </span>
+                          <select
+                            className={fieldClass}
+                            defaultValue={user.isAdmin ? "true" : "false"}
+                            name="isAdmin"
+                          >
+                            <option value="false">Morador</option>
+                            <option value="true">Admin</option>
+                          </select>
+                        </label>
+                      ) : null}
                       <SubmitButton>Editar</SubmitButton>
                       <ConfirmSubmitButton
                         className="rounded-2xl border border-orange-300/20 bg-orange-400/10 px-5 py-3 text-sm font-black text-orange-200 transition hover:border-orange-300/40 hover:bg-orange-400/15"
@@ -1922,6 +1997,23 @@ export default async function Home({
                         Eliminar
                       </ConfirmSubmitButton>
                     </form>
+                    {sessionUser.isAdmin ? (
+                      <form
+                        action={setUserPassword}
+                        className="mt-3 grid gap-3 border-t border-cyan-300/10 pt-3 md:grid-cols-[1fr_auto] md:items-end"
+                      >
+                        <input name="userId" type="hidden" value={user.id} />
+                        <TextInput
+                          label={user.hasPassword ? "Redefinir senha" : "Definir senha"}
+                          name="newPassword"
+                          type="password"
+                          placeholder="Mínimo 8 caracteres"
+                        />
+                        <SubmitButton>
+                          {user.hasPassword ? "Redefinir" : "Definir"}
+                        </SubmitButton>
+                      </form>
+                    ) : null}
                   </div>
                 ))}
               </div>

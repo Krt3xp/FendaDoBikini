@@ -61,6 +61,16 @@ export async function deleteUser(formData: FormData) {
   return proxyToBackend("users", formData, "DELETE");
 }
 
+/** Admin: define/redefine a senha de um morador. */
+export async function setUserPassword(formData: FormData) {
+  return proxyToBackend("users/set-password", formData);
+}
+
+/** Admin: liga/desliga o primeiro acesso (auto-cadastro de senha). */
+export async function setFirstAccess(formData: FormData) {
+  return proxyToBackend("settings/first-access", formData, "PUT");
+}
+
 /** Cria um novo grupo de divisão de despesas. */
 export async function createGroup(formData: FormData) {
   return proxyToBackend("groups", formData);

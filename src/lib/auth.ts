@@ -9,6 +9,7 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
+  isAdmin: boolean;
 }
 
 /** Lê o token de sessão do cookie da requisição atual (ou null). */

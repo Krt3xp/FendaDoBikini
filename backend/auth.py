@@ -98,6 +98,27 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     return user
 
 
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """
+    Dependency: exige que o morador autenticado seja admin.
+
+    Raises:
+        HTTPException(403): morador autenticado mas sem papel de admin
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Apenas administradores podem fazer isso")
+    return current_user
+
+
+def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[User]:
+    """Como get_current_user, mas retorna None em vez de 401 (para o bootstrap)."""
+    token = _extract_bearer_token(request)
+    payload = decode_session_token(token) if token else None
+    if not payload:
+        return None
+    return db.query(User).filter(User.id == payload["sub"]).first()
+
+
 def _is_bootstrap_user_creation(request: Request) -> bool:
     """
     Permite POST /api/users sem autenticação apenas enquanto o banco não

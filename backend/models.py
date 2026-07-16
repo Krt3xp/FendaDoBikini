@@ -37,10 +37,20 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False)
     # Hash bcrypt da senha; NULL = morador ainda não definiu senha (primeiro acesso pendente)
     password_hash = Column(String(255), nullable=True)
+    # Admin: pode gerenciar moradores, senhas e configurações do sistema
+    is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
+
+class AppSetting(Base):
+    """Configuração chave-valor do sistema (ex: habilitar primeiro acesso)."""
+    __tablename__ = "app_settings"
+
+    key = Column(String(80), primary_key=True)
+    value = Column(String(255), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
 class Group(Base):
     """Representa um grupo de divisão de despesas (ex: república, apartamento)."""

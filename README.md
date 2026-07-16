@@ -83,8 +83,10 @@ Todas as rotas (frontend e API) exigem login por morador:
 
 - **Login**: e-mail + senha em `/login`. A sessão é um JWT (7 dias) guardado em cookie `httpOnly`.
 - **Primeiro acesso**: morador cadastrado sem senha define a própria senha na tela de login ("Primeiro acesso? Definir minha senha"). Só funciona enquanto a senha não existe.
-- **Bootstrap**: numa instalação vazia (zero moradores), o primeiro `POST /api/users` é permitido sem sessão — crie o primeiro morador, defina a senha via primeiro acesso e o sistema tranca.
-- **API**: endpoints `/api/*` exigem header `Authorization: Bearer <token>`; o token vem de `POST /api/auth/login`. Troca de senha em `POST /api/auth/change-password`.
+- **Bootstrap**: numa instalação vazia (zero moradores), o primeiro `POST /api/users` é permitido sem sessão — o primeiro morador criado já nasce **admin**. Depois disso o sistema tranca.
+- **Papéis**: moradores `admin` gerenciam moradores (criar/editar/eliminar), definem/redefinem senhas de qualquer morador e controlam as configurações de acesso — tudo em **Parâmetros → Moradores**. Um admin não consegue remover o próprio papel.
+- **Toggle de primeiro acesso**: admins podem desativar o auto-cadastro de senha ("Acesso e segurança" na tela de Moradores). Desativado, a opção some da tela de login e `POST /api/auth/setup-password` responde 403 — só admins definem senhas.
+- **API**: endpoints `/api/*` exigem header `Authorization: Bearer <token>`; o token vem de `POST /api/auth/login`. Troca de senha em `POST /api/auth/change-password`; admin: `POST /api/users/set-password`, `PUT /api/settings/first-access`; config pública: `GET /api/auth/config`.
 
 ## 📁 Estrutura do Projeto
 

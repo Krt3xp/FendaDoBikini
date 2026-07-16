@@ -30,8 +30,9 @@ import shutil
 
 from database import engine, Base, get_db
 from models import (
-    User, Group, GroupMember, Category, Expense, ExpenseSplit, 
-    Settlement, ActivityLog, FixedBill, FavorCredit, PantryItem, PantryPurchase
+    User, Group, GroupMember, Category, Expense, ExpenseSplit,
+    Settlement, ActivityLog, FixedBill, FavorCredit, PantryItem, PantryPurchase,
+    AppSetting
 )
 
 # Extensões de arquivo permitidas para upload de comprovantes
@@ -48,14 +49,39 @@ try:
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE pantry_purchases ADD COLUMN IF NOT EXISTS expense_id UUID REFERENCES expenses(id) ON DELETE SET NULL"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE"))
         conn.commit()
 except Exception as e:
     print("Could not alter tables:", e)
 
 from auth import (
-    auth_middleware, get_current_user, hash_password, verify_password,
-    create_session_token, MIN_PASSWORD_LENGTH
+    auth_middleware, get_current_user, get_current_user_optional, require_admin,
+    hash_password, verify_password, create_session_token, MIN_PASSWORD_LENGTH
 )
+
+# Configurações do sistema (tabela app_settings)
+FIRST_ACCESS_KEY = "first_access_enabled"
+
+
+def _get_setting(db: Session, key: str, default: str) -> str:
+    """Lê uma configuração chave-valor, com default se ausente."""
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    return row.value if row else default
+
+
+def _set_setting(db: Session, key: str, value: str) -> None:
+    """Grava (upsert) uma configuração chave-valor."""
+    row = db.query(AppSetting).filter(AppSetting.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(AppSetting(key=key, value=value))
+    db.commit()
+
+
+def _first_access_enabled(db: Session) -> bool:
+    """Primeiro acesso (auto-cadastro de senha) habilitado? Default: sim."""
+    return _get_setting(db, FIRST_ACCESS_KEY, "true") == "true"
 
 app = FastAPI()
 
@@ -103,7 +129,13 @@ def _validate_upload(file_content: bytes, filename: str) -> None:
 
 def _serialize_session_user(user: User) -> dict:
     """Serializa o usuário autenticado para respostas de auth."""
-    return {"id": str(user.id), "name": user.name, "email": user.email}
+    return {"id": str(user.id), "name": user.name, "email": user.email, "isAdmin": bool(user.is_admin)}
+
+
+@app.get("/api/auth/config")
+def get_auth_config(db: Session = Depends(get_db)):
+    """Configuração pública de autenticação (consumida pela tela de login)."""
+    return {"firstAccessEnabled": _first_access_enabled(db)}
 
 
 @app.post("/api/auth/login")
@@ -141,6 +173,8 @@ def setup_password(email: str = Form(...), password: str = Form(...), db: Sessio
         HTTPException(404): e-mail não cadastrado
         HTTPException(409): morador já tem senha definida
     """
+    if not _first_access_enabled(db):
+        raise HTTPException(status_code=403, detail="Primeiro acesso desativado. Peça a um administrador para definir sua senha.")
     if len(password) < MIN_PASSWORD_LENGTH:
         raise HTTPException(status_code=400, detail=f"A senha precisa ter pelo menos {MIN_PASSWORD_LENGTH} caracteres")
     user = db.query(User).filter(func.lower(User.email) == email.strip().lower()).first()
@@ -302,7 +336,7 @@ def get_dashboard_data(db: Session = Depends(get_db)):
         })
 
     return {
-        "users": [{"id": str(u.id), "name": u.name, "email": u.email, "createdAt": u.created_at.isoformat(), "updatedAt": u.updated_at.isoformat()} for u in users],
+        "users": [{"id": str(u.id), "name": u.name, "email": u.email, "isAdmin": bool(u.is_admin), "hasPassword": u.password_hash is not None, "createdAt": u.created_at.isoformat(), "updatedAt": u.updated_at.isoformat()} for u in users],
         "categories": [{"id": str(c.id), "name": c.name, "icon": c.icon, "createdAt": c.created_at.isoformat()} for c in categories],
         "groups": groups_data
     }
@@ -331,9 +365,16 @@ def create_category(name: str = Form(...), icon: Optional[str] = Form(None), db:
     return {"status": "success"}
 
 @app.post("/api/users")
-def create_user(name: str = Form(...), email: str = Form(...), db: Session = Depends(get_db)):
+def create_user(
+    name: str = Form(...),
+    email: str = Form(...),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
     """
-    Cria um novo usuário/morador.
+    Cria um novo usuário/morador. Requer admin — exceto no bootstrap
+    (banco sem nenhum usuário), quando o primeiro morador criado já
+    nasce admin.
 
     Args:
         name: nome do morador
@@ -342,20 +383,65 @@ def create_user(name: str = Form(...), email: str = Form(...), db: Session = Dep
     Returns:
         dict com status de sucesso
     """
-    user = User(name=name, email=email.lower())
+    is_bootstrap = db.query(User).count() == 0
+    if not is_bootstrap:
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="Não autenticado")
+        if not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Apenas administradores podem cadastrar moradores")
+    user = User(name=name, email=email.lower(), is_admin=is_bootstrap)
     db.add(user)
     db.commit()
     return {"status": "success"}
 
+
+@app.post("/api/users/set-password")
+def admin_set_password(
+    userId: str = Form(...),
+    newPassword: str = Form(...),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin define/redefine a senha de qualquer morador."""
+    if len(newPassword) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail=f"A senha precisa ter pelo menos {MIN_PASSWORD_LENGTH} caracteres")
+    user = db.query(User).filter(User.id == userId).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Morador não encontrado")
+    user.password_hash = hash_password(newPassword)
+    db.commit()
+    return {"status": "success"}
+
+
+@app.put("/api/settings/first-access")
+def set_first_access(
+    enabled: str = Form(...),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin liga/desliga o primeiro acesso (auto-cadastro de senha)."""
+    _set_setting(db, FIRST_ACCESS_KEY, "true" if enabled.lower() == "true" else "false")
+    return {"status": "success", "firstAccessEnabled": _first_access_enabled(db)}
+
 @app.put("/api/users")
-def update_user(userId: str = Form(...), name: str = Form(...), email: str = Form(...), db: Session = Depends(get_db)):
+def update_user(
+    userId: str = Form(...),
+    name: str = Form(...),
+    email: str = Form(...),
+    isAdmin: Optional[str] = Form(None),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     """
-    Atualiza nome e e-mail de um usuário existente.
+    Atualiza nome, e-mail e (opcionalmente) papel de admin de um usuário.
+    Requer admin. Um admin não pode remover o próprio papel (evita
+    sistema sem administradores).
 
     Args:
         userId: UUID do usuário
         name: novo nome
         email: novo e-mail
+        isAdmin: "true"/"false" para alterar o papel (omitido = mantém)
 
     Returns:
         dict com status de sucesso
@@ -364,11 +450,16 @@ def update_user(userId: str = Form(...), name: str = Form(...), email: str = For
     if user:
         user.name = name
         user.email = email.lower()
+        if isAdmin is not None:
+            new_role = isAdmin.lower() == "true"
+            if user.id == admin.id and not new_role:
+                raise HTTPException(status_code=400, detail="Você não pode remover seu próprio papel de admin")
+            user.is_admin = new_role
         db.commit()
     return {"status": "success"}
 
 @app.delete("/api/users")
-def delete_user(userId: str = Form(...), db: Session = Depends(get_db)):
+def delete_user(userId: str = Form(...), admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     """
     Remove um usuário do sistema.
 
