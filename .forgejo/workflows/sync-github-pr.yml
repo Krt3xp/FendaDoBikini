@@ -1,0 +1,76 @@
+# Espelha branches deste forge para o GitHub e mantém o PR remoto.
+#
+# Fluxo: push em qualquer branch (exceto main) →
+#   1. branch força-push para o fork m-da-costa/FendaDoBikini
+#   2. se existir PR ABERTO aqui no forge para a branch → garante PR
+#      remoto contra Krt3xp/FendaDoBikini:main (cria se faltar)
+#
+# Neste Forgejo (15.x/gitea-1.22) eventos pull_request não geram runs —
+# por isso o gatilho é push. A branch precisa CONTER este arquivo para
+# disparar (branches novas cortadas de main herdam automaticamente).
+#
+# Segredos do repositório (Settings → Actions → Secrets):
+#   GH_PAT — GitHub PAT (m-da-costa) com escopo repo
+#
+# Nota: clone COMPLETO de propósito — templates com --depth 1 só baixam
+# a default branch e o checkout de SHA de feature branch falha silencioso.
+name: sync-github-pr
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  mirror-to-github:
+    runs-on: native
+    steps:
+      - name: Clone completo + checkout da branch
+        run: |
+          rm -rf repo
+          git clone "http://oauth2:${{ secrets.GITHUB_TOKEN }}@192.168.50.210:3000/${{ github.repository }}.git" repo
+          cd repo
+          git checkout "${{ github.ref_name }}"
+          git --no-pager log --oneline -1
+
+      - name: Push da branch para o fork no GitHub
+        run: |
+          cd repo
+          git push --force \
+            "https://m-da-costa:${{ secrets.GH_PAT }}@github.com/m-da-costa/FendaDoBikini.git" \
+            "HEAD:refs/heads/${{ github.ref_name }}"
+
+      - name: Garantir PR remoto se houver PR aberto no forge
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          FORGE_PR=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "http://192.168.50.210:3000/api/v1/repos/${{ github.repository }}/pulls?state=open" \
+            | python3 -c "
+          import json, sys
+          prs = [p for p in json.load(sys.stdin) if p['head']['ref'] == '${BRANCH}']
+          print(prs[0]['title'] if prs else '')")
+          if [ -z "$FORGE_PR" ]; then
+            echo "Sem PR aberto no forge para ${BRANCH} — só espelhei a branch."
+            exit 0
+          fi
+          EXISTING=$(curl -s -H "Authorization: token ${{ secrets.GH_PAT }}" \
+            "https://api.github.com/repos/Krt3xp/FendaDoBikini/pulls?head=m-da-costa:${BRANCH}&state=open" \
+            | python3 -c "import json,sys; prs=json.load(sys.stdin); print(prs[0]['html_url'] if prs else '')")
+          if [ -n "$EXISTING" ]; then
+            echo "PR remoto já existe: $EXISTING (branch atualizada pelo push)"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GH_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            -d "{\"title\": \"${FORGE_PR}\", \"head\": \"m-da-costa:${BRANCH}\", \"base\": \"main\", \"body\": \"PR espelhado automaticamente do forge interno (friends/FendaDoBikini, branch ${BRANCH}).\"}" \
+            "https://api.github.com/repos/Krt3xp/FendaDoBikini/pulls")
+          echo "$RESP" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          if 'html_url' in d:
+              print('PR remoto criado:', d['html_url'])
+          elif 'already exist' in json.dumps(d.get('errors', '')):
+              print('PR remoto já existia (corrida) — ok')
+          else:
+              raise SystemExit('Falha ao criar PR remoto: ' + json.dumps(d)[:300])"
