@@ -43,14 +43,17 @@ MAX_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-# Add column if not exists
+# Add column if not exists (auto-migração para novas colunas)
 from sqlalchemy import text
 try:
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE pantry_purchases ADD COLUMN IF NOT EXISTS expense_id UUID REFERENCES expenses(id) ON DELETE SET NULL"))
+        conn.execute(text("ALTER TABLE settlements ADD COLUMN IF NOT EXISTS receipt_url VARCHAR(512)"))
+        conn.execute(text("ALTER TABLE settlements ADD COLUMN IF NOT EXISTS receipt_name VARCHAR(255)"))
+        conn.execute(text("ALTER TABLE settlements ADD COLUMN IF NOT EXISTS receipt_mime_type VARCHAR(100)"))
         conn.commit()
 except Exception as e:
-    print("Could not alter table pantry_purchases:", e)
+    print("Could not alter table:", e)
 
 app = FastAPI()
 
@@ -210,6 +213,7 @@ def get_dashboard_data(db: Session = Depends(get_db)):
                 {
                     "id": str(st.id), "groupId": str(st.group_id), "payerId": str(st.payer_id), "receiverId": str(st.receiver_id),
                     "amount": st.amount, "currency": st.currency, "settledAt": st.settled_at.isoformat(), "createdAt": st.created_at.isoformat(),
+                    "receiptUrl": st.receipt_url, "receiptName": st.receipt_name, "receiptMimeType": st.receipt_mime_type,
                     "payer": {"id": str(st.payer.id), "name": st.payer.name},
                     "receiver": {"id": str(st.receiver.id), "name": st.receiver.name}
                 } for st in settlements
@@ -670,7 +674,16 @@ def delete_pantry_item(pantryItemId: str = Form(...), groupId: str = Form(...), 
     return {"status": "success"}
 
 @app.post("/api/settlements")
-def create_settlement(groupId: str = Form(...), payerId: str = Form(...), receiverId: str = Form(...), amount: str = Form(...), currency: str = Form(...), db: Session = Depends(get_db)):
+async def create_settlement(
+    groupId: str = Form(...),
+    payerId: str = Form(...),
+    receiverId: str = Form(...),
+    amount: str = Form(...),
+    currency: str = Form(...),
+    settledAt: Optional[str] = Form(None),
+    receipt: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
     """
     Registra uma liquidação (pagamento de dívida) entre dois moradores.
 
@@ -680,6 +693,8 @@ def create_settlement(groupId: str = Form(...), payerId: str = Form(...), receiv
         receiverId: UUID de quem recebeu
         amount: valor liquidado (aceita vírgula como separador decimal)
         currency: moeda (ex: 'BRL')
+        settledAt: data do pagamento no formato 'YYYY-MM-DD' (opcional)
+        receipt: comprovante de pagamento (upload opcional)
 
     Returns:
         dict com status de sucesso
@@ -690,8 +705,44 @@ def create_settlement(groupId: str = Form(...), payerId: str = Form(...), receiv
     # Normalização de valor
     normalized_amount = amount.replace(',', '.')
     decimal_amount = Decimal(normalized_amount)
-    
-    settlement = Settlement(group_id=groupId, payer_id=payerId, receiver_id=receiverId, amount=decimal_amount, currency=currency.upper())
+
+    # Processar data do pagamento
+    settled_datetime = None
+    if settledAt and settledAt.strip():
+        try:
+            settled_datetime = datetime.strptime(settledAt.strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            settled_datetime = datetime.now(timezone.utc)
+    else:
+        settled_datetime = datetime.now(timezone.utc)
+
+    # Processar comprovante
+    receipt_url = None
+    receipt_name = None
+    receipt_mime_type = None
+
+    if receipt and getattr(receipt, "filename", None):
+        file_content = await receipt.read()
+        _validate_upload(file_content, receipt.filename)
+
+        os.makedirs("/app/public/uploads/receipts", exist_ok=True)
+        file_ext = os.path.splitext(receipt.filename)[1]
+        safe_filename = f"{uuid.uuid4()}{file_ext}"
+        filepath = os.path.join("/app/public/uploads/receipts", safe_filename)
+
+        with open(filepath, "wb") as f:
+            f.write(file_content)
+
+        receipt_url = f"/receipts/{safe_filename}"
+        receipt_name = receipt.filename
+        receipt_mime_type = receipt.content_type
+
+    settlement = Settlement(
+        group_id=groupId, payer_id=payerId, receiver_id=receiverId,
+        amount=decimal_amount, currency=currency.upper(),
+        settled_at=settled_datetime,
+        receipt_url=receipt_url, receipt_name=receipt_name, receipt_mime_type=receipt_mime_type
+    )
     db.add(settlement)
     db.flush()
     

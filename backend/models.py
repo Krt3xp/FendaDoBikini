@@ -130,6 +130,9 @@ class Settlement(Base):
     receiver_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
     currency = Column(String(3), nullable=False)
+    receipt_url = Column(String(512), nullable=True)
+    receipt_name = Column(String(255), nullable=True)
+    receipt_mime_type = Column(String(100), nullable=True)
     settled_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 

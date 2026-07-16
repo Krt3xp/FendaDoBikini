@@ -47,6 +47,7 @@ const viewIds = [
   "grupos",
   "categorias",
   "despesas",
+  "liquidacoes",
   "despensa",
 ] as const;
 
@@ -738,6 +739,7 @@ function Sidebar({
   const mainItems = [
     { label: "Visão geral", view: "dashboard" },
     { label: "Commits de Gastos", view: "despesas" },
+    { label: "Liquidações", view: "liquidacoes" },
     { label: "Despensa", view: "despensa" },
   ] as const;
 
@@ -1045,20 +1047,10 @@ function SettlementOverview({
             </p>
           ) : (
             settlements.map((payment) => (
-              <form
-                action={createSettlement}
+              <div
                 className="rounded-3xl border border-emerald-300/15 bg-emerald-400/10 p-4"
                 key={payment.key}
               >
-                <input name="groupId" type="hidden" value={payment.groupId} />
-                <input name="payerId" type="hidden" value={payment.fromId} />
-                <input name="receiverId" type="hidden" value={payment.toId} />
-                <input
-                  name="amount"
-                  type="hidden"
-                  value={payment.amount.toFixed(2)}
-                />
-                <input name="currency" type="hidden" value={payment.currency} />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-lg font-bold text-slate-50">
@@ -1074,18 +1066,15 @@ function SettlementOverview({
                     <strong className="rounded-full bg-emerald-300 px-3 py-1 text-sm text-slate-950">
                       {formatMoney(payment.amount, payment.currency)}
                     </strong>
-                    <ConfirmSubmitButton
+                    <Link
                       className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-sm font-black text-cyan-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/15"
-                      message={`${formatPersonName(payment.fromName)} pagou ${formatMoney(
-                        payment.amount,
-                        payment.currency,
-                      )} para ${formatPersonName(payment.toName)}?`}
+                      href={`/?view=liquidacoes&payerId=${payment.fromId}&receiverId=${payment.toId}&amount=${payment.amount.toFixed(2)}&currency=${payment.currency}&groupId=${payment.groupId}`}
                     >
                       Liquidar
-                    </ConfirmSubmitButton>
+                    </Link>
                   </div>
                 </div>
-              </form>
+              </div>
             ))
           )}
         </div>
@@ -1737,6 +1726,312 @@ function PantryView({
     </section>
   );
 }
+/**
+ * View completa de liquidações (settlements).
+ * Permite registrar novas liquidações com data e comprovante,
+ * e exibe o histórico de todas as liquidações passadas.
+ */
+function LiquidacoesView({
+  groups,
+  users,
+  today,
+  prefill,
+}: {
+  groups: DashboardGroup[];
+  users: { id: string; name: string }[];
+  today: string;
+  prefill?: {
+    payerId?: string;
+    receiverId?: string;
+    amount?: string;
+    currency?: string;
+    groupId?: string;
+  };
+}) {
+  // Coleta todas as liquidações de todos os grupos
+  const allSettlements = groups
+    .flatMap((g) =>
+      g.settlements.map((s) => ({
+        ...s,
+        groupName: g.name,
+      })),
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.settledAt).getTime() - new Date(a.settledAt).getTime(),
+    );
+
+  const prefillPayer = users.find((u) => u.id === prefill?.payerId);
+  const prefillReceiver = users.find((u) => u.id === prefill?.receiverId);
+  const prefillGroup = groups.find((g) => g.id === prefill?.groupId);
+  const hasPrefill = prefillPayer && prefillReceiver && prefill?.amount;
+
+  return (
+    <section className="flex flex-col gap-6">
+      {/* Formulário de nova liquidação */}
+      <form action={createSettlement} className={panelClass}>
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
+          Nova Liquidação
+        </p>
+        <h2 className="mt-1 text-xl font-bold text-white">
+          Registrar pagamento entre moradores
+        </h2>
+
+        {hasPrefill && (
+          <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4">
+            <p className="text-sm text-emerald-100">
+              <span className="font-bold text-white">
+                {formatPersonName(prefillPayer.name)}
+              </span>
+              <span className="mx-2 text-emerald-300">→</span>
+              <span className="font-bold text-white">
+                {formatPersonName(prefillReceiver.name)}
+              </span>
+              <span className="mx-2 text-slate-400">·</span>
+              <strong className="text-emerald-300">
+                {formatMoney(
+                  parseFloat(prefill.amount || "0"),
+                  prefill.currency || "BRL",
+                )}
+              </strong>
+              {prefillGroup && (
+                <span className="ml-2 text-xs text-emerald-100/60">
+                  ({prefillGroup.name})
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Grupo
+            </label>
+            <select
+              name="groupId"
+              defaultValue={prefill?.groupId || ""}
+              className={`w-full ${fieldClass}`}
+              required
+            >
+              <option value="" disabled>
+                Selecione o grupo
+              </option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Valor
+            </label>
+            <input
+              name="amount"
+              type="text"
+              inputMode="decimal"
+              defaultValue={prefill?.amount || ""}
+              placeholder="Ex.: 150,00"
+              className={`w-full ${fieldClass}`}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Pagador (quem pagou)
+            </label>
+            <select
+              name="payerId"
+              defaultValue={prefill?.payerId || ""}
+              className={`w-full ${fieldClass}`}
+              required
+            >
+              <option value="" disabled>
+                Selecione
+              </option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Recebedor (quem recebeu)
+            </label>
+            <select
+              name="receiverId"
+              defaultValue={prefill?.receiverId || ""}
+              className={`w-full ${fieldClass}`}
+              required
+            >
+              <option value="" disabled>
+                Selecione
+              </option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Data do pagamento
+            </label>
+            <input
+              name="settledAt"
+              type="date"
+              defaultValue={today}
+              className={`w-full ${fieldClass}`}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Moeda
+            </label>
+            <select
+              name="currency"
+              defaultValue={prefill?.currency || "BRL"}
+              className={`w-full ${fieldClass}`}
+            >
+              <option value="BRL">BRL</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Comprovante (opcional)
+          </label>
+          <input
+            name="receipt"
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif"
+            className={`w-full ${fieldClass} file:mr-4 file:rounded-full file:border-0 file:bg-cyan-300/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-cyan-200 hover:file:bg-cyan-300/30`}
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            PDF, imagem (até 8 MB)
+          </p>
+        </div>
+
+        <div className="mt-6">
+          <ConfirmSubmitButton
+            className="rounded-2xl bg-gradient-to-r from-emerald-400 to-cyan-400 px-6 py-3 text-sm font-black text-slate-950 shadow-[0_0_24px_rgba(34,211,238,0.2)] transition hover:-translate-y-0.5 hover:shadow-[0_0_34px_rgba(16,185,129,0.3)]"
+            message="Confirmar esta liquidação?"
+          >
+            Confirmar Liquidação
+          </ConfirmSubmitButton>
+        </div>
+      </form>
+
+      {/* Histórico de liquidações */}
+      <div className={panelClass}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
+              Histórico
+            </p>
+            <h2 className="mt-1 text-xl font-bold text-white">
+              Liquidações registradas
+            </h2>
+          </div>
+          <span className="rounded-full bg-cyan-300/15 px-3 py-1 text-xs font-bold text-cyan-200">
+            {allSettlements.length}{" "}
+            {allSettlements.length === 1 ? "liquidação" : "liquidações"}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          {allSettlements.length === 0 ? (
+            <p className="rounded-3xl border border-white/10 bg-white/10 p-5 text-sm text-slate-300">
+              Nenhuma liquidação registrada ainda.
+            </p>
+          ) : (
+            allSettlements.map((st) => {
+              const previewUrl = getReceiptPreviewUrl(st.receiptUrl);
+              const previewKind = getReceiptPreviewKind(st.receiptMimeType);
+
+              return (
+                <div
+                  className="rounded-3xl border border-cyan-300/10 bg-slate-900/60 p-4"
+                  key={st.id}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-base font-bold text-white">
+                        {formatPersonName(st.payer.name)}
+                        <span className="mx-2 text-emerald-300">→</span>
+                        {formatPersonName(st.receiver.name)}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+                        {st.groupName} ·{" "}
+                        {timestampFormatter.format(new Date(st.settledAt))}
+                      </p>
+                    </div>
+                    <strong className="rounded-full bg-emerald-300 px-3 py-1 text-sm text-slate-950">
+                      {formatMoney(
+                        st.amount.toNumber(),
+                        st.currency,
+                      )}
+                    </strong>
+                  </div>
+
+                  {previewUrl && (
+                    <div className="mt-3 flex items-center gap-2 rounded-2xl border border-cyan-300/10 bg-slate-950/60 px-4 py-2">
+                      <svg
+                        className="size-4 shrink-0 text-cyan-300"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                        />
+                      </svg>
+                      <a
+                        href={previewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-cyan-200 underline transition hover:text-cyan-100"
+                      >
+                        {st.receiptName || "Comprovante"}
+                      </a>
+                      {previewKind === "image" && (
+                        <span className="rounded bg-cyan-300/10 px-2 py-0.5 text-[10px] font-bold uppercase text-cyan-300">
+                          Imagem
+                        </span>
+                      )}
+                      {previewKind === "pdf" && (
+                        <span className="rounded bg-fuchsia-300/10 px-2 py-0.5 text-[10px] font-bold uppercase text-fuchsia-300">
+                          PDF
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // TODO: Implementar Error Boundary para falhas de conexão com o backend
 // TODO: Adicionar notificações/toasts de sucesso após operações CRUD
@@ -1751,6 +2046,11 @@ export default async function Home({
 }: {
   searchParams?: Promise<{
     view?: string | string[];
+    payerId?: string;
+    receiverId?: string;
+    amount?: string;
+    currency?: string;
+    groupId?: string;
   }>;
 }) {
   const params = searchParams ? await searchParams : undefined;
@@ -2214,6 +2514,21 @@ export default async function Home({
               })
             )}
           </section>
+        )}
+
+        {activeView === "liquidacoes" && (
+          <LiquidacoesView
+            groups={groups}
+            users={users}
+            today={today}
+            prefill={{
+              payerId: params?.payerId,
+              receiverId: params?.receiverId,
+              amount: params?.amount,
+              currency: params?.currency,
+              groupId: params?.groupId,
+            }}
+          />
         )}
 
         {activeView === "despensa" && (

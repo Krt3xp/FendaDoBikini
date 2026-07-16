@@ -150,6 +150,9 @@ export interface Settlement {
   currency: string;
   settledAt: Date;
   createdAt: Date;
+  receiptUrl: string | null;
+  receiptName: string | null;
+  receiptMimeType: string | null;
   payer: {
     id: string;
     name: string;
